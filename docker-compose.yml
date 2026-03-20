@@ -1,0 +1,14 @@
+services:
+  adguard-exporter:
+    build: .
+    container_name: adguard-exporter
+    restart: unless-stopped
+    ports:
+      - "9911:9911"
+    environment:
+      ADGUARD_URL: "${ADGUARD_URL}"
+      ADGUARD_USERNAME: "${ADGUARD_USERNAME}"
+      ADGUARD_PASSWORD: "${ADGUARD_PASSWORD}"
+      REQUEST_TIMEOUT: "${REQUEST_TIMEOUT:-10}"
+      QUERYLOG_LIMIT: "${QUERYLOG_LIMIT:-1000}"
+
