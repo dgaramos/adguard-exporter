@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from adguard_exporter.parsers.reason import classify_reason
+from adguard_exporter.services.client_mapping import resolve_client_name
+
 
 @dataclass(slots=True)
 class QuerylogSummary:
@@ -15,21 +18,23 @@ class QuerylogSummary:
     total_entries: int
 
 
-def extract_client(entry: dict[str, Any]) -> str:
+def extract_client(entry: dict[str, Any], client_name_map: dict[str, str] | None = None) -> str:
+    raw_client = "unknown"
+
     if isinstance(entry.get("client"), str) and entry["client"]:
-        return entry["client"]
+        raw_client = entry["client"]
+    else:
+        client_info = entry.get("client_info")
+        if isinstance(client_info, dict):
+            if isinstance(client_info.get("name"), str) and client_info["name"]:
+                raw_client = client_info["name"]
+            elif isinstance(client_info.get("ip"), str) and client_info["ip"]:
+                raw_client = client_info["ip"]
 
-    client_info = entry.get("client_info")
-    if isinstance(client_info, dict):
-        if isinstance(client_info.get("name"), str) and client_info["name"]:
-            return client_info["name"]
-        if isinstance(client_info.get("ip"), str) and client_info["ip"]:
-            return client_info["ip"]
+        if raw_client == "unknown" and isinstance(entry.get("client_ip"), str) and entry["client_ip"]:
+            raw_client = entry["client_ip"]
 
-    if isinstance(entry.get("client_ip"), str) and entry["client_ip"]:
-        return entry["client_ip"]
-
-    return "unknown"
+    return resolve_client_name(raw_client, client_name_map)
 
 
 def extract_blocked(entry: dict[str, Any]) -> bool | None:
@@ -42,28 +47,9 @@ def extract_blocked(entry: dict[str, Any]) -> bool | None:
         if isinstance(is_filtered, bool):
             return is_filtered
 
-    reason = str(entry.get("reason", "")).strip().lower()
-    blocked_reasons = {
-        "filtered",
-        "blocked",
-        "filteredblacklist",
-        "safebrowsing",
-        "parental",
-        "safesearch",
-    }
-    non_blocked_reasons = {
-        "",
-        "notfiltered",
-        "processed",
-        "rewrite",
-        "rewritten",
-        "cached",
-    }
-
-    if reason in blocked_reasons:
-        return True
-    if reason in non_blocked_reasons:
-        return False
+    blocked_from_reason = classify_reason(entry.get("reason"))
+    if blocked_from_reason is not None:
+        return blocked_from_reason
 
     status = str(entry.get("status", "")).strip().lower()
     if status in {"blocked", "filtered"}:
@@ -74,7 +60,7 @@ def extract_blocked(entry: dict[str, Any]) -> bool | None:
     return None
 
 
-def summarize_querylog(entries: list[dict[str, Any]]) -> QuerylogSummary:
+def summarize_querylog(entries: list[dict[str, Any]], client_name_map: dict[str, str] | None = None) -> QuerylogSummary:
     client_counts: dict[str, int] = {}
     client_blocked_counts: dict[str, int] = {}
     client_classified_counts: dict[str, int] = {}
@@ -84,7 +70,7 @@ def summarize_querylog(entries: list[dict[str, Any]]) -> QuerylogSummary:
     unknown_detected = 0
 
     for entry in entries:
-        client_name = extract_client(entry)
+        client_name = extract_client(entry, client_name_map=client_name_map)
         blocked_state = extract_blocked(entry)
 
         client_counts[client_name] = client_counts.get(client_name, 0) + 1

@@ -27,6 +27,10 @@ class AdGuardClient:
     def querylog_url(self) -> str:
         return f"{self.base_url}/control/querylog"
 
+    @property
+    def clients_url(self) -> str:
+        return f"{self.base_url}/control/clients"
+
     def login(self) -> None:
         payload = {
             "name": self.username,
@@ -40,32 +44,22 @@ class AdGuardClient:
         if time.time() - self.last_login > 600:
             self.login()
 
-    def get_stats(self) -> dict[str, Any]:
+    def _get_json(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_login()
 
-        response = self.session.get(self.stats_url, timeout=self.timeout)
+        response = self.session.get(url, params=params, timeout=self.timeout)
         if response.status_code == 401:
             self.login()
-            response = self.session.get(self.stats_url, timeout=self.timeout)
+            response = self.session.get(url, params=params, timeout=self.timeout)
 
         response.raise_for_status()
         return response.json()
+
+    def get_stats(self) -> dict[str, Any]:
+        return self._get_json(self.stats_url)
 
     def get_querylog(self, limit: int = 1000) -> dict[str, Any]:
-        self._ensure_login()
+        return self._get_json(self.querylog_url, params={"limit": limit})
 
-        response = self.session.get(
-            self.querylog_url,
-            params={"limit": limit},
-            timeout=self.timeout,
-        )
-        if response.status_code == 401:
-            self.login()
-            response = self.session.get(
-                self.querylog_url,
-                params={"limit": limit},
-                timeout=self.timeout,
-            )
-
-        response.raise_for_status()
-        return response.json()
+    def get_clients(self) -> dict[str, Any]:
+        return self._get_json(self.clients_url)

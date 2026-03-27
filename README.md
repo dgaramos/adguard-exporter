@@ -2,7 +2,7 @@
 
 A custom Python Prometheus exporter for AdGuard Home.
 
-This project exists because AdGuard Home's native Prometheus metrics are not enough for the level of observability needed in this homelab setup. The exporter collects data from the AdGuard API, reshapes it into Prometheus metrics, and makes it easy to build Grafana dashboards around DNS usage, blocking behavior, and client-level visibility.
+This project exists because AdGuard Home's native Prometheus metrics are not enough for the level of observability needed in this homelab setup. The exporter collects data from the AdGuard API, reshapes it into Prometheus metrics, and makes it easier to build Grafana dashboards around DNS usage, blocking behavior, and client-level visibility.
 
 ## Goals
 - Expose useful AdGuard Home metrics in Prometheus format
@@ -23,6 +23,8 @@ The exporter currently:
 - authenticates against the AdGuard API
 - reads `/control/stats`
 - reads `/control/querylog`
+- reads `/control/clients`
+- persists local querylog processing state
 - exposes Prometheus metrics at `/metrics`
 
 ## Project Structure
@@ -32,16 +34,25 @@ The exporter currently:
 ├── adguard_exporter/
 │   ├── clients/
 │   │   └── adguard.py
+│   ├── collectors/
+│   │   └── querylog.py
 │   ├── metrics/
 │   │   └── exporter.py
 │   ├── parsers/
-│   │   └── querylog.py
+│   │   ├── querylog.py
+│   │   └── reason.py
+│   ├── services/
+│   │   └── client_mapping.py
+│   ├── state/
+│   │   ├── file.py
+│   │   └── store.py
 │   ├── __init__.py
 │   ├── app.py
 │   └── config.py
 ├── tests/
 │   ├── test_app.py
-│   └── test_querylog_parser.py
+│   ├── test_querylog_parser.py
+│   └── test_state.py
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── Dockerfile
@@ -72,33 +83,61 @@ The exporter currently:
 - `adguard_top_upstream_avg_time_seconds{upstream}`
 
 ### Per-client metrics
+Compatibility aliases:
 - `adguard_client_queries_total{client}`
 - `adguard_client_blocked_total{client}`
 - `adguard_client_blocked_ratio{client}`
 
+Explicit processed metrics:
+- `adguard_client_queries_processed_total{client}`
+- `adguard_client_blocked_processed_total{client}`
+- `adguard_client_blocked_processed_ratio{client}`
+
 ### Debug and health metrics
+Compatibility alias:
+- `adguard_querylog_entries_total`
+
+Explicit processed metric:
+- `adguard_querylog_entries_processed_total`
+
+Other debug metrics:
 - `adguard_exporter_up`
 - `adguard_querylog_up`
-- `adguard_querylog_entries_total`
 - `adguard_querylog_blocked_detected_total`
 - `adguard_querylog_nonblocked_detected_total`
 - `adguard_querylog_unknown_blocked_state_total`
 
 ## Important Metric Semantics
-Some metrics are derived from a querylog snapshot, not from a true historical counter stream.
+The exporter now treats AdGuard querylog as a rolling snapshot and processes it incrementally using persisted local state.
 
-That means:
+That means querylog-derived values are exporter-processed cumulative values, not raw snapshot values from a single `querylog` response.
+
+Preferred metrics for new dashboards:
+- `adguard_client_queries_processed_total`
+- `adguard_client_blocked_processed_total`
+- `adguard_client_blocked_processed_ratio`
+- `adguard_querylog_entries_processed_total`
+
+Compatibility aliases kept for existing dashboards:
 - `adguard_client_queries_total`
 - `adguard_client_blocked_total`
 - `adguard_client_blocked_ratio`
+- `adguard_querylog_entries_total`
 
-are snapshot-based values built from the current AdGuard querylog response. They are useful, but they should not be treated as perfect monotonic counters.
+These aliases currently expose the same values as the explicit `processed` metrics.
+
+This improves consistency across scrapes, but it also means:
+- the exporter depends on persisted local state for continuity
+- deleting the state file resets locally processed querylog counters
+- restarting the exporter without persisted state will lose incremental history
+
+Global metrics from `/control/stats` are still exposed directly from AdGuard.
 
 ## Current Limitations
-- Querylog parsing is still heuristic.
-- AdGuard querylog shape is not fully stable across versions.
-- `unknown_blocked_state` can be high enough to affect confidence in per-client blocked ratios.
-- Querylog is a snapshot, not a complete historical source.
+- Querylog parsing still depends on API field stability across AdGuard versions.
+- Querylog remains a snapshot source at the API level.
+- Local incremental counters depend on exporter state persistence.
+- `unknown_blocked_state` can still affect confidence in per-client blocked ratios.
 - Per-client per-domain metrics are not implemented.
 - Any `client + domain` metric design must be treated as a Prometheus cardinality risk.
 
@@ -112,6 +151,8 @@ Environment variables:
 | `ADGUARD_PASSWORD` | AdGuard password | `secret` |
 | `REQUEST_TIMEOUT` | API request timeout in seconds | `10` |
 | `QUERYLOG_LIMIT` | Number of querylog entries to fetch | `1000` |
+| `QUERYLOG_STATE_PATH` | Local file used to persist processed querylog state | `/tmp/adguard_exporter_querylog_state.json` |
+| `QUERYLOG_RECENT_FINGERPRINTS_LIMIT` | Number of recent processed fingerprints kept for deduplication | `5000` |
 | `EXPORTER_PORT` | HTTP port for the exporter | `9911` |
 
 See [.env.example](/workspace/adguard-exporter/.env.example).
@@ -128,6 +169,13 @@ Test the exporter:
 curl http://localhost:9911/
 curl http://localhost:9911/metrics
 ```
+
+## State Persistence Notes
+If you want querylog-derived counters to survive container restarts, mount persistent storage for the state file path.
+
+Without persistence:
+- global `/control/stats` metrics still work
+- querylog-derived local counters restart from zero when the exporter restarts
 
 ## Prometheus Example
 
@@ -163,9 +211,9 @@ adguard_blocked_ratio * 100
 Clients:
 
 ```promql
-topk(10, adguard_client_queries_total)
-topk(10, adguard_client_blocked_total)
-topk(10, adguard_client_blocked_ratio * 100)
+topk(10, adguard_client_queries_processed_total)
+topk(10, adguard_client_blocked_processed_total)
+topk(10, adguard_client_blocked_processed_ratio * 100)
 ```
 
 ## Engineering Direction
@@ -176,6 +224,7 @@ The exporter should keep moving in this direction:
 - use Prometheus for aggregates and Loki for detailed inspection
 - improve error handling and internal observability
 - keep the codebase small and maintainable
+- keep querylog-derived counters stateful and explicit
 
 ## Troubleshooting
 If the exporter does not respond:
@@ -183,7 +232,8 @@ If the exporter does not respond:
 - verify credentials
 - verify container networking
 
-If the metrics look wrong:
+If querylog-derived counters look wrong:
+- check the state file path and persistence setup
 - check the debug metrics first
 - compare exporter output with raw AdGuard querylog behavior
 - pay attention to `adguard_querylog_unknown_blocked_state_total`

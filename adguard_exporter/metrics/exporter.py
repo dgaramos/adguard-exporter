@@ -4,7 +4,9 @@ from flask import Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 
 from adguard_exporter.clients.adguard import AdGuardClient
-from adguard_exporter.parsers.querylog import summarize_querylog
+from adguard_exporter.collectors.querylog import process_querylog_incrementally
+from adguard_exporter.services.client_mapping import build_client_name_map
+from adguard_exporter.state.store import StateStore
 
 
 def _set_top_map(metric: Gauge, items: list[dict[str, int]]) -> None:
@@ -21,7 +23,12 @@ def _set_top_map_custom_label(metric: Gauge, items: list[dict[str, float | int]]
             metric.labels(**{label_name: key}).set(value)
 
 
-def build_metrics_response(client: AdGuardClient, querylog_limit: int) -> Response:
+def build_metrics_response(
+    client: AdGuardClient,
+    querylog_limit: int,
+    state_store: StateStore,
+    recent_fingerprints_limit: int,
+) -> Response:
     registry = CollectorRegistry()
 
     g_num_dns_queries = Gauge("adguard_num_dns_queries", "Total DNS queries", registry=registry)
@@ -41,26 +48,54 @@ def build_metrics_response(client: AdGuardClient, querylog_limit: int) -> Respon
 
     g_client_queries = Gauge(
         "adguard_client_queries_total",
-        "Queries per client from querylog snapshot",
+        "Compatibility alias for processed queries per client from querylog",
         ["client"],
         registry=registry,
     )
     g_client_blocked = Gauge(
         "adguard_client_blocked_total",
-        "Blocked queries per client from querylog snapshot",
+        "Compatibility alias for processed blocked queries per client from querylog",
         ["client"],
         registry=registry,
     )
     g_client_blocked_ratio = Gauge(
         "adguard_client_blocked_ratio",
-        "Blocked ratio per client from querylog snapshot",
+        "Compatibility alias for processed blocked ratio per client from querylog",
+        ["client"],
+        registry=registry,
+    )
+
+    g_client_queries_processed = Gauge(
+        "adguard_client_queries_processed_total",
+        "Queries per client processed from querylog",
+        ["client"],
+        registry=registry,
+    )
+    g_client_blocked_processed = Gauge(
+        "adguard_client_blocked_processed_total",
+        "Blocked queries per client processed from querylog",
+        ["client"],
+        registry=registry,
+    )
+    g_client_blocked_ratio_processed = Gauge(
+        "adguard_client_blocked_processed_ratio",
+        "Blocked ratio per client from processed querylog entries",
         ["client"],
         registry=registry,
     )
 
     g_exporter_up = Gauge("adguard_exporter_up", "Exporter status", registry=registry)
     g_querylog_up = Gauge("adguard_querylog_up", "Querylog collection status", registry=registry)
-    g_querylog_entries_total = Gauge("adguard_querylog_entries_total", "Total querylog entries parsed", registry=registry)
+    g_querylog_entries_total = Gauge(
+        "adguard_querylog_entries_total",
+        "Compatibility alias for total processed querylog entries",
+        registry=registry,
+    )
+    g_querylog_entries_processed = Gauge(
+        "adguard_querylog_entries_processed_total",
+        "Total querylog entries processed incrementally",
+        registry=registry,
+    )
     g_querylog_blocked_detected_total = Gauge("adguard_querylog_blocked_detected_total", "Entries confidently detected as blocked", registry=registry)
     g_querylog_nonblocked_detected_total = Gauge("adguard_querylog_nonblocked_detected_total", "Entries confidently detected as non-blocked", registry=registry)
     g_querylog_unknown_blocked_state_total = Gauge("adguard_querylog_unknown_blocked_state_total", "Entries where blocked state could not be determined", registry=registry)
@@ -95,27 +130,49 @@ def build_metrics_response(client: AdGuardClient, querylog_limit: int) -> Respon
         return Response(generate_latest(registry), mimetype=CONTENT_TYPE_LATEST)
 
     try:
+        client_name_map: dict[str, str] = {}
+        try:
+            client_name_map = build_client_name_map(client.get_clients())
+        except Exception:
+            client_name_map = {}
+
         querylog = client.get_querylog(limit=querylog_limit)
         entries = querylog.get("data", [])
-        summary = summarize_querylog(entries)
+
+        current_state = state_store.load_querylog_state()
+        next_state = process_querylog_incrementally(
+            entries=entries,
+            state=current_state,
+            client_name_map=client_name_map,
+            recent_fingerprints_limit=recent_fingerprints_limit,
+        )
+        state_store.save_querylog_state(next_state)
 
         g_client_queries.clear()
         g_client_blocked.clear()
         g_client_blocked_ratio.clear()
+        g_client_queries_processed.clear()
+        g_client_blocked_processed.clear()
+        g_client_blocked_ratio_processed.clear()
 
-        for client_name, total in summary.client_counts.items():
-            blocked_total = summary.client_blocked_counts.get(client_name, 0)
-            classified_total = summary.client_classified_counts.get(client_name, 0)
+        for client_name, total in next_state.client_counts.items():
+            blocked_total = next_state.client_blocked_counts.get(client_name, 0)
+            classified_total = next_state.client_classified_counts.get(client_name, 0)
             ratio = (blocked_total / classified_total) if classified_total > 0 else 0
 
             g_client_queries.labels(client=client_name).set(total)
             g_client_blocked.labels(client=client_name).set(blocked_total)
             g_client_blocked_ratio.labels(client=client_name).set(ratio)
 
-        g_querylog_entries_total.set(summary.total_entries)
-        g_querylog_blocked_detected_total.set(summary.blocked_detected)
-        g_querylog_nonblocked_detected_total.set(summary.nonblocked_detected)
-        g_querylog_unknown_blocked_state_total.set(summary.unknown_detected)
+            g_client_queries_processed.labels(client=client_name).set(total)
+            g_client_blocked_processed.labels(client=client_name).set(blocked_total)
+            g_client_blocked_ratio_processed.labels(client=client_name).set(ratio)
+
+        g_querylog_entries_total.set(next_state.total_entries)
+        g_querylog_entries_processed.set(next_state.total_entries)
+        g_querylog_blocked_detected_total.set(next_state.blocked_detected)
+        g_querylog_nonblocked_detected_total.set(next_state.nonblocked_detected)
+        g_querylog_unknown_blocked_state_total.set(next_state.unknown_detected)
         g_querylog_up.set(1)
     except Exception:
         g_querylog_up.set(0)
