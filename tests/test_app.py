@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import adguard_exporter.app as app_module
-from adguard_exporter.app import app
+import importlib
+
 from adguard_exporter.state.store import QuerylogState
+
+app_module = importlib.import_module("adguard_exporter.app")
+app = app_module.app
 
 
 class InMemoryStateStore:
@@ -136,4 +139,5 @@ def test_metrics_route_reports_exporter_down_when_stats_fail(monkeypatch):
 
     assert response.status_code == 200
     assert 'adguard_exporter_up 0.0' in body
-    assert 'adguard_num_dns_queries' not in body
+    assert 'adguard_num_dns_queries 0.0' in body
+    assert 'adguard_num_blocked_filtering 0.0' in body

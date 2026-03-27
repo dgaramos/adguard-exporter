@@ -49,12 +49,14 @@ def test_process_querylog_incrementally_skips_duplicate_snapshot_entries():
 
 
 def test_process_querylog_incrementally_accumulates_only_new_entries():
+    client_name_map = {"192.168.1.10": "dan-phone"}
+
     initial_state = process_querylog_incrementally(
         entries=[
             {"time": 1710000000, "client_ip": "192.168.1.10", "reason": "FilteredBlackList", "question": {"host": "example.com"}},
         ],
         state=QuerylogState(),
-        client_name_map={"192.168.1.10": "dan-phone"},
+        client_name_map=client_name_map,
         recent_fingerprints_limit=10,
     )
 
@@ -65,6 +67,7 @@ def test_process_querylog_incrementally_accumulates_only_new_entries():
             {"time": 1710000002, "client": "tablet", "reason": "FilteredSafeBrowsing", "question": {"host": "ads.example"}},
         ],
         state=initial_state,
+        client_name_map=client_name_map,
         recent_fingerprints_limit=10,
     )
 
