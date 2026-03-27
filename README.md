@@ -49,16 +49,22 @@ The exporter currently:
 │   ├── __init__.py
 │   ├── app.py
 │   └── config.py
+├── dashboards/
+│   └── grafana/
+│       ├── adguard_exporter_devices.json
+│       └── adguard_exporter_overview.json
 ├── tests/
 │   ├── test_app.py
 │   ├── test_querylog_parser.py
 │   └── test_state.py
+├── .env.example
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── Dockerfile
 ├── README.md
 ├── app.py
 ├── docker-compose.yml
+├── pytest.ini
 ├── requirements-dev.txt
 └── requirements.txt
 ```

@@ -36,6 +36,7 @@ Devices -> AdGuard API -> adguard_exporter -> Prometheus -> Grafana
 - `adguard_exporter/state/store.py`: state model and interface
 - `adguard_exporter/state/file.py`: file-backed persisted state
 - `adguard_exporter/metrics/exporter.py`: metric building and exposition
+- `dashboards/grafana/`: shipped Grafana dashboards for overview and device-level views
 - `app.py`: root runtime entrypoint
 - `tests/`: parser, state, and endpoint test coverage
 
@@ -66,14 +67,25 @@ Devices -> AdGuard API -> adguard_exporter -> Prometheus -> Grafana
 - `adguard_top_upstream_avg_time_seconds{upstream}`
 
 ### Per-client
+Compatibility aliases:
 - `adguard_client_queries_total{client}`
 - `adguard_client_blocked_total{client}`
 - `adguard_client_blocked_ratio{client}`
 
+Explicit processed metrics:
+- `adguard_client_queries_processed_total{client}`
+- `adguard_client_blocked_processed_total{client}`
+- `adguard_client_blocked_processed_ratio{client}`
+
 ### Debug / health
+Compatibility alias:
+- `adguard_querylog_entries_total`
+
+Explicit processed metric:
+- `adguard_querylog_entries_processed_total`
+
 - `adguard_exporter_up`
 - `adguard_querylog_up`
-- `adguard_querylog_entries_total`
 - `adguard_querylog_blocked_detected_total`
 - `adguard_querylog_nonblocked_detected_total`
 - `adguard_querylog_unknown_blocked_state_total`

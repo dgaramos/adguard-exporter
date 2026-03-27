@@ -40,6 +40,7 @@ The exporter:
 - `adguard_exporter/services/client_mapping.py`: friendly device name mapping
 - `adguard_exporter/state/`: persisted querylog state
 - `adguard_exporter/metrics/exporter.py`: Prometheus metric construction and rendering
+- `dashboards/grafana/`: shipped Grafana dashboards for overview and device-level visibility
 - `app.py`: thin root entrypoint for runtime compatibility
 - `tests/`: parser, state, and HTTP endpoint tests
 
