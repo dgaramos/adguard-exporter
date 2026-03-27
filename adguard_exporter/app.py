@@ -11,9 +11,14 @@ from adguard_exporter.config import (
     QUERYLOG_RECENT_FINGERPRINTS_LIMIT,
     QUERYLOG_STATE_PATH,
     REQUEST_TIMEOUT,
+    LOG_FORMAT,
+    LOG_LEVEL,
 )
 from adguard_exporter.metrics.exporter import build_metrics_response
+from adguard_exporter.observability import configure_logging
 from adguard_exporter.state.file import FileStateStore
+
+configure_logging(level=LOG_LEVEL, log_format=LOG_FORMAT)
 
 app = Flask(__name__)
 

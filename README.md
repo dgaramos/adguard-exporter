@@ -38,6 +38,7 @@ The exporter currently:
 │   │   └── querylog.py
 │   ├── metrics/
 │   │   └── exporter.py
+│   ├── observability.py
 │   ├── parsers/
 │   │   ├── querylog.py
 │   │   └── reason.py
@@ -52,6 +53,7 @@ The exporter currently:
 ├── dashboards/
 │   └── grafana/
 │       ├── adguard_exporter_devices.json
+│       ├── adguard_exporter_observability.json
 │       └── adguard_exporter_overview.json
 ├── tests/
 │   ├── test_app.py
@@ -112,6 +114,16 @@ Other debug metrics:
 - `adguard_querylog_blocked_detected_total`
 - `adguard_querylog_nonblocked_detected_total`
 - `adguard_querylog_unknown_blocked_state_total`
+- `adguard_exporter_last_scrape_duration_seconds`
+- `adguard_exporter_last_scrape_timestamp_seconds`
+- `adguard_exporter_last_success_timestamp_seconds`
+- `adguard_exporter_last_stats_duration_seconds`
+- `adguard_exporter_last_stats_success_timestamp_seconds`
+- `adguard_exporter_last_querylog_duration_seconds`
+- `adguard_exporter_last_querylog_success_timestamp_seconds`
+- `adguard_exporter_api_request_failures_total{endpoint}`
+- `adguard_exporter_processing_failures_total{stage}`
+- `adguard_exporter_state_operation_failures_total{operation}`
 
 ## Important Metric Semantics
 The exporter now treats AdGuard querylog as a rolling snapshot and processes it incrementally using persisted local state.
@@ -160,6 +172,8 @@ Environment variables:
 | `QUERYLOG_STATE_PATH` | Local file used to persist processed querylog state | `/tmp/adguard_exporter_querylog_state.json` |
 | `QUERYLOG_RECENT_FINGERPRINTS_LIMIT` | Number of recent processed fingerprints kept for deduplication | `5000` |
 | `EXPORTER_PORT` | HTTP port for the exporter | `9911` |
+| `LOG_LEVEL` | Python log level for exporter logs | `INFO` |
+| `LOG_FORMAT` | Log format for stdout logs; use `json` for Loki | `json` |
 
 See [.env.example](/workspace/adguard-exporter/.env.example).
 
@@ -193,15 +207,17 @@ Without persistence:
 ```
 
 ## Grafana Dashboards
-This repository includes two Grafana dashboards:
+This repository includes three Grafana dashboards:
 
 - `dashboards/grafana/adguard_exporter_overview.json`
 - `dashboards/grafana/adguard_exporter_devices.json`
+- `dashboards/grafana/adguard_exporter_observability.json`
 
 Dashboard details:
 
 - `AdGuard Exporter Overview` (`uid: adguard-exporter-overview`)
 - `AdGuard Exporter Devices` (`uid: adguard-exporter-devices`)
+- `AdGuard Exporter Observability` (`uid: adguard-exporter-observability`)
 
 These dashboards expect a Prometheus datasource and were exported with a Grafana Prometheus datasource input named `DS_PROMETHEUS`.
 
@@ -229,14 +245,55 @@ Notes:
 - If Grafana warns that the dashboard UID already exists, choose whether to overwrite the existing dashboard or change the UID/title during import.
 - The dashboards do not require template variables or extra plugins beyond standard Grafana panels and the Prometheus datasource.
 - Some panels use the stateful processed querylog metrics such as `adguard_client_queries_processed_total` and `adguard_client_blocked_processed_total`, so querylog state persistence affects what you see after exporter restarts.
+- The observability dashboard focuses on exporter health, scrape durations, API failures, and state operation failures.
 
 ### Dashboard Files
 If you are running Grafana on a different machine, copy the JSON files from:
 
 - `dashboards/grafana/adguard_exporter_overview.json`
 - `dashboards/grafana/adguard_exporter_devices.json`
+- `dashboards/grafana/adguard_exporter_observability.json`
 
 You can also open the files directly from this repository and paste the JSON into Grafana's import page instead of uploading the files.
+
+## Exporter Observability
+The exporter now exposes its own bounded internal observability signals so you can watch the watcher:
+
+- scrape timing gauges for the whole scrape, stats fetch, and querylog processing
+- last successful scrape timestamps
+- AdGuard API request failure totals by endpoint
+- exporter processing failure totals by stage
+- querylog state load/save failure totals
+
+These are intentionally low-cardinality metrics designed for Grafana panels and alerts.
+
+### Loki-Friendly Logs
+Exporter logs are written to stdout and can be collected by Docker logging, Alloy, or Promtail and sent to Loki.
+
+Recommended settings:
+
+- `LOG_FORMAT=json`
+- `LOG_LEVEL=INFO`
+
+Useful log events:
+
+- `exporter_scrape_completed`
+- `stats_collection_failed`
+- `querylog_collection_failed`
+- `client_mapping_failed`
+- `adguard_api_request_failed`
+- `querylog_state_load_failed`
+- `querylog_state_save_failed`
+
+Example LogQL queries after the logs are in Loki:
+
+```logql
+{container="adguard-exporter"} | json | event="querylog_collection_failed"
+```
+
+```logql
+{container="adguard-exporter"} | json | event="exporter_scrape_completed" | line_format "{{.timestamp}} stats_up={{.stats_up}} querylog_up={{.querylog_up}}"
+```
 
 ## Development
 Install development dependencies:

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
+from adguard_exporter.observability import get_telemetry
 from adguard_exporter.state.store import QuerylogState
 
 app_module = importlib.import_module("adguard_exporter.app")
@@ -66,6 +69,13 @@ class FailingStatsClient:
         raise AssertionError("querylog should not be called when stats fails")
 
 
+@pytest.fixture(autouse=True)
+def reset_telemetry():
+    get_telemetry().reset()
+    yield
+    get_telemetry().reset()
+
+
 def test_index_route_returns_ok():
     response = app.test_client().get("/")
 
@@ -98,6 +108,12 @@ def test_metrics_route_exposes_expected_metrics(monkeypatch):
     assert 'adguard_querylog_entries_total 3.0' in body
     assert 'adguard_querylog_entries_processed_total 3.0' in body
     assert 'adguard_querylog_unknown_blocked_state_total 0.0' in body
+    assert 'adguard_exporter_last_scrape_duration_seconds ' in body
+    assert 'adguard_exporter_last_stats_duration_seconds ' in body
+    assert 'adguard_exporter_last_querylog_duration_seconds ' in body
+    assert 'adguard_exporter_api_request_failures_total{endpoint="stats"} 0.0' in body
+    assert 'adguard_exporter_processing_failures_total{stage="querylog"} 0.0' in body
+    assert 'adguard_exporter_state_operation_failures_total{operation="load"} 0.0' in body
 
 
 def test_metrics_route_keeps_cumulative_counts_across_duplicate_snapshots(monkeypatch):
@@ -141,3 +157,4 @@ def test_metrics_route_reports_exporter_down_when_stats_fail(monkeypatch):
     assert 'adguard_exporter_up 0.0' in body
     assert 'adguard_num_dns_queries 0.0' in body
     assert 'adguard_num_blocked_filtering 0.0' in body
+    assert 'adguard_exporter_processing_failures_total{stage="stats"} 1.0' in body

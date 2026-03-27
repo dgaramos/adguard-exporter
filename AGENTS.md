@@ -37,10 +37,11 @@ The exporter:
 - `adguard_exporter/parsers/querylog.py`: querylog parsing and blocked-state heuristics
 - `adguard_exporter/parsers/reason.py`: explicit reason-based classification
 - `adguard_exporter/collectors/querylog.py`: incremental querylog processing and deduplication
+- `adguard_exporter/observability.py`: exporter logging and self-observability state
 - `adguard_exporter/services/client_mapping.py`: friendly device name mapping
 - `adguard_exporter/state/`: persisted querylog state
 - `adguard_exporter/metrics/exporter.py`: Prometheus metric construction and rendering
-- `dashboards/grafana/`: shipped Grafana dashboards for overview and device-level visibility
+- `dashboards/grafana/`: shipped Grafana dashboards for overview, device-level visibility, and exporter observability
 - `app.py`: thin root entrypoint for runtime compatibility
 - `tests/`: parser, state, and HTTP endpoint tests
 

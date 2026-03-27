@@ -32,11 +32,12 @@ Devices -> AdGuard API -> adguard_exporter -> Prometheus -> Grafana
 - `adguard_exporter/parsers/querylog.py`: querylog parsing and client extraction
 - `adguard_exporter/parsers/reason.py`: explicit `reason` classification
 - `adguard_exporter/collectors/querylog.py`: incremental querylog processing
+- `adguard_exporter/observability.py`: structured logging and exporter self-observability state
 - `adguard_exporter/services/client_mapping.py`: friendly client mapping
 - `adguard_exporter/state/store.py`: state model and interface
 - `adguard_exporter/state/file.py`: file-backed persisted state
 - `adguard_exporter/metrics/exporter.py`: metric building and exposition
-- `dashboards/grafana/`: shipped Grafana dashboards for overview and device-level views
+- `dashboards/grafana/`: shipped Grafana dashboards for overview, device-level views, and exporter observability
 - `app.py`: root runtime entrypoint
 - `tests/`: parser, state, and endpoint test coverage
 
@@ -86,6 +87,16 @@ Explicit processed metric:
 
 - `adguard_exporter_up`
 - `adguard_querylog_up`
+- `adguard_exporter_last_scrape_duration_seconds`
+- `adguard_exporter_last_scrape_timestamp_seconds`
+- `adguard_exporter_last_success_timestamp_seconds`
+- `adguard_exporter_last_stats_duration_seconds`
+- `adguard_exporter_last_stats_success_timestamp_seconds`
+- `adguard_exporter_last_querylog_duration_seconds`
+- `adguard_exporter_last_querylog_success_timestamp_seconds`
+- `adguard_exporter_api_request_failures_total{endpoint}`
+- `adguard_exporter_processing_failures_total{stage}`
+- `adguard_exporter_state_operation_failures_total{operation}`
 - `adguard_querylog_blocked_detected_total`
 - `adguard_querylog_nonblocked_detected_total`
 - `adguard_querylog_unknown_blocked_state_total`
