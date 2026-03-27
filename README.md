@@ -186,6 +186,52 @@ Without persistence:
         - 192.168.15.50:9911
 ```
 
+## Grafana Dashboards
+This repository includes two Grafana dashboards:
+
+- `dashboards/grafana/adguard_exporter_overview.json`
+- `dashboards/grafana/adguard_exporter_devices.json`
+
+Dashboard details:
+
+- `AdGuard Exporter Overview` (`uid: adguard-exporter-overview`)
+- `AdGuard Exporter Devices` (`uid: adguard-exporter-devices`)
+
+These dashboards expect a Prometheus datasource and were exported with a Grafana Prometheus datasource input named `DS_PROMETHEUS`.
+
+### Importing The Dashboards
+Before importing:
+
+- make sure Grafana already has a working Prometheus datasource
+- make sure Prometheus is scraping this exporter
+- verify the exporter metrics exist by checking `http://<exporter-host>:9911/metrics`
+
+Import steps in Grafana:
+
+1. Open Grafana.
+2. Go to `Dashboards` -> `New` -> `Import`.
+3. Click `Upload dashboard JSON file`.
+4. Select one of these files from this repo:
+   - `dashboards/grafana/adguard_exporter_overview.json`
+   - `dashboards/grafana/adguard_exporter_devices.json`
+5. When Grafana prompts for the `Prometheus` datasource, choose your Prometheus datasource.
+6. Click `Import`.
+7. Repeat for the second dashboard file.
+
+Notes:
+
+- If Grafana warns that the dashboard UID already exists, choose whether to overwrite the existing dashboard or change the UID/title during import.
+- The dashboards do not require template variables or extra plugins beyond standard Grafana panels and the Prometheus datasource.
+- Some panels use the stateful processed querylog metrics such as `adguard_client_queries_processed_total` and `adguard_client_blocked_processed_total`, so querylog state persistence affects what you see after exporter restarts.
+
+### Dashboard Files
+If you are running Grafana on a different machine, copy the JSON files from:
+
+- `dashboards/grafana/adguard_exporter_overview.json`
+- `dashboards/grafana/adguard_exporter_devices.json`
+
+You can also open the files directly from this repository and paste the JSON into Grafana's import page instead of uploading the files.
+
 ## Development
 Install development dependencies:
 
